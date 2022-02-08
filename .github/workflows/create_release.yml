@@ -1,0 +1,30 @@
+on:
+  push:
+    tags:
+      - '*'
+    branches-ignore:
+      - '*'
+
+name: Create Release
+
+jobs:
+  build:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Create Release
+        run: |
+          curl --location --request POST 'https://api.github.com/repos/UnifiedPaymentSolutions/github_actions_test/releases' \
+          -H 'Accept: application/vnd.github.v3+json' \
+          -H 'Content-Type: application/json' \
+          -i -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          --data-raw '{
+              "tag_name": "'${GITHUB_REF}'",
+              "name": "Release of version '${GITHUB_REF##refs/tags/}'",
+              "prerelease": true,
+              "generate_release_notes": true
+            }'

@@ -1,0 +1,131 @@
+---
+name: Deploy to Staging
+on:
+  push:
+    branches:
+      - 'main'
+jobs:
+  Run_Tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./payment-app
+    env:
+      RAILS_ENV: test
+  
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: "password"
+          POSTGRES_DB: postgres
+          # needed because the postgres container does not provide a healthcheck
+          # tmpfs makes DB faster by using RAM
+          options: >-
+            --mount type=tmpfs,destination=/var/lib/postgresql/data
+            --health-cmd pg_isready
+            --health-interval 10s
+            --health-timeout 5s
+            --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12.22.5
+
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
+      - name: Set up Ruby and check for gem cache
+        uses: ruby/setup-ruby@477b21f02be01bcb8030d50f37cfec92bfa615b6
+        with:
+          ruby-version: 3.0.1
+          bundler-cache: true
+          working-directory: ./payment-app
+
+      - name: Bundle gems
+        run: bundle install
+
+      - name: Install node packages for Webpacker
+        run: yarn install --pure-lockfile
+
+      - name: Pre-compile assets for testing
+        run: bundle exec rails assets:precompile
+
+      - name: Set up the application database
+        run: "bundle exec rails db:setup && bundle exec rails db:migrate"
+        env:
+          DATABASE_URL: "postgres://postgres:password@localhost"
+
+      - name: Run rspec tests
+        run: bundle exec rspec spec
+        env:
+          DATABASE_URL: "postgres://postgres:password@localhost"
+  
+  Build_AMI:
+    needs: Run_Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/packer
+    env:
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Install Packer Plugins
+        run: packer init build-ami.pkr.hcl
+
+      - name: Validate Packer Template Syntax
+        run: packer validate -syntax-only build-ami.pkr.hcl
+
+      - name: Build AMI for deployment
+        run: | 
+          packer build \
+          -color=false \
+          -on-error=abort \
+          -var "commit_sha=${GITHUB_SHA}" \
+          build-ami.pkr.hcl
+        env:
+          PACKER_LOG: 1
+
+  Deploy_to_Staging:
+    needs: Build_AMI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/terraform/staging
+    env:
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
+      - name: Install Terraform Plugins
+        run: terraform init
+
+      - name: Deploy application with Terraform
+        run: | 
+          terraform apply \
+          -auto-approve \
+          -var="github_run_id=${GITHUB_RUN_ID}" \
+          -var="git_sha=${GITHUB_SHA}" 
+
+
+

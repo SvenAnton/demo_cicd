@@ -1,0 +1,37 @@
+---
+on:
+  release:
+    types:
+      - released
+
+name: Deploy to prod
+jobs:
+  Deploy_to_Production:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./infra/terraform/production
+    env:
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
+      - name: Install Terraform Plugins
+        run: terraform init
+
+      - name: Deploy application with Terraform
+        run: | 
+          terraform apply \
+          -auto-approve \
+          -var="github_run_id=${GITHUB_RUN_ID}" \
+          -var="git_sha=${GITHUB_SHA}" 

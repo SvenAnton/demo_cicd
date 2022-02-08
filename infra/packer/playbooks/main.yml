@@ -1,0 +1,42 @@
+---
+- hosts: default
+  become: true
+  vars:
+    server_name: "{{ ansible_default_ipv4.address }}"
+    document_root: /var/www/html
+    app_root: app
+  tasks:
+
+    - name: Update cache and install Nginx
+      apt:
+        name: nginx
+        state: latest
+        update_cache: true
+
+    - name: Copy website files to the server's document root
+      copy:
+        src: "{{ app_root }}"
+        dest: "{{ document_root }}"
+        mode: preserve
+
+    - name: Apply Nginx template
+      template:
+        src: files/nginx.conf.j2
+        dest: /etc/nginx/sites-available/default
+
+    - name: Enable new site
+      file:
+        src: /etc/nginx/sites-available/default
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+
+    - name: Allow all access to tcp port 80
+      ufw:
+        rule: allow
+        port: '80'
+        proto: tcp
+
+    - name: Enable Nginx as a servive when container gets booted
+      service:
+        name: nginx
+        enabled: true

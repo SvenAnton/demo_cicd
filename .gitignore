@@ -1,0 +1,4 @@
+infra/terraform/staging/.terraform/*
+infra/terraform/production/.terraform/*
+infra/terraform/staging/keys
+infra/terraform/production/keys
