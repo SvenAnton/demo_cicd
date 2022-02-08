@@ -5,7 +5,6 @@ RUN npm install --global yarn
 
 WORKDIR /payment-app
 COPY Gemfile Gemfile
-COPY Gemfile.lock Gemfile.lock
 RUN bundle install
 
 # Add a script to be executed every time the container starts.
